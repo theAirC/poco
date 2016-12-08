@@ -56,45 +56,7 @@ class PageRequestHandler: public HTTPRequestHandler
 public:
 	void handleRequest(HTTPServerRequest& request, HTTPServerResponse& response)
 	{
-		response.setChunkedTransferEncoding(true);
-		response.setContentType("text/html");
-		std::ostream& ostr = response.send();
-		ostr << "<html>";
-		ostr << "<head>";
-		ostr << "<title>WebSocketServer</title>";
-		ostr << "<script type=\"text/javascript\">";
-		ostr << "function WebSocketTest()";
-		ostr << "{";
-		ostr << "  if (\"WebSocket\" in window)";
-		ostr << "  {";
-		ostr << "    var ws = new WebSocket(\"ws://" << request.serverAddress().toString() << "/ws\");";
-		ostr << "    ws.onopen = function()";
-		ostr << "      {";
-		ostr << "        ws.send(\"Hello, world!\");";
-		ostr << "      };";
-		ostr << "    ws.onmessage = function(evt)";
-		ostr << "      { ";
-		ostr << "        var msg = evt.data;";
-		ostr << "        alert(\"Message received: \" + msg);";
-		ostr << "        ws.close();";
-		ostr << "      };";
-		ostr << "    ws.onclose = function()";
-		ostr << "      { ";
-		ostr << "        alert(\"WebSocket closed.\");";
-		ostr << "      };";
-		ostr << "  }";
-		ostr << "  else";
-		ostr << "  {";
-		ostr << "     alert(\"This browser does not support WebSockets.\");";
-		ostr << "  }";
-		ostr << "}";
-		ostr << "</script>";
-		ostr << "</head>";
-		ostr << "<body>";
-		ostr << "  <h1>WebSocket Server</h1>";
-		ostr << "  <p><a href=\"javascript:WebSocketTest()\">Run WebSocket Script</a></p>";
-		ostr << "</body>";
-		ostr << "</html>";
+		response.sendFile("index.html", "text/html");
 	}
 };
 
@@ -117,9 +79,14 @@ public:
 			{
 				n = ws.receiveFrame(buffer, sizeof(buffer), flags);
 				app.logger().information(Poco::format("Frame received (length=%d, flags=0x%x).", n, unsigned(flags)));
+				if (n > 3) {
+					buffer[0] = 'O';
+					buffer[1] = 'K';
+					buffer[2] = '!';
+				}
 				ws.sendFrame(buffer, n, flags);
 			}
-			while (n > 0 || (flags & WebSocket::FRAME_OP_BITMASK) != WebSocket::FRAME_OP_CLOSE);
+			while (n > 0 && (flags & WebSocket::FRAME_OP_CLOSE) == 0);
 			app.logger().information("WebSocket connection closed.");
 		}
 		catch (WebSocketException& exc)
