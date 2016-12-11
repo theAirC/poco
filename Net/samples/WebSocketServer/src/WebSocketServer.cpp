@@ -48,20 +48,35 @@ using Poco::Util::Option;
 using Poco::Util::OptionSet;
 using Poco::Util::HelpFormatter;
 
+const char NotFoundMsg[] = "Requested file not found!";
 
-class PageRequestHandler: public HTTPRequestHandler
+
+class PageRequestHandler : public HTTPRequestHandler
 	/// Return a HTML document with some JavaScript creating
 	/// a WebSocket connection.
 {
 public:
 	void handleRequest(HTTPServerRequest& request, HTTPServerResponse& response)
 	{
-		response.sendFile("index.html", "text/html");
+		std::string uri = "." + request.getURI();
+		if (uri.find("..") != std::string::npos) uri = "/"; // Prevent going up in the directory hierarchy
+		if (uri.back() == '/') uri += "index.html";
+		try {
+			response.sendFile(uri, ""); // MIME type defaults to "text/plain", leave as is and hope the client will know how to interpret
+		}
+		catch (Poco::FileNotFoundException &e) {
+			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND, "Not Found");
+			response.setContentType("text/html");
+			response.sendBuffer(NotFoundMsg, sizeof(NotFoundMsg));
+
+			Application& app = Application::instance();
+			app.logger().information("Requested file not found: " + e.message());
+		}
 	}
 };
 
 
-class WebSocketRequestHandler: public HTTPRequestHandler
+class WebSocketRequestHandler : public HTTPRequestHandler
 	/// Handle a WebSocket connection.
 {
 public:
@@ -85,8 +100,7 @@ public:
 					buffer[2] = '!';
 				}
 				ws.sendFrame(buffer, n, flags);
-			}
-			while (n > 0 && (flags & WebSocket::FRAME_OP_CLOSE) == 0);
+			} while (n > 0 && (flags & WebSocket::FRAME_OP_CLOSE) == 0);
 			app.logger().information("WebSocket connection closed.");
 		}
 		catch (WebSocketException& exc)
@@ -110,27 +124,27 @@ public:
 };
 
 
-class RequestHandlerFactory: public HTTPRequestHandlerFactory
+class RequestHandlerFactory : public HTTPRequestHandlerFactory
 {
 public:
 	HTTPRequestHandler* createRequestHandler(const HTTPServerRequest& request)
 	{
 		Application& app = Application::instance();
-		app.logger().information("Request from " 
+		app.logger().information("Request from "
 			+ request.clientAddress().toString()
-			+ ": "
+			+ ": ["
 			+ request.getMethod()
-			+ " "
+			+ "] ["
 			+ request.getURI()
-			+ " "
+			+ "] "
 			+ request.getVersion());
-			
+
 		for (HTTPServerRequest::ConstIterator it = request.begin(); it != request.end(); ++it)
 		{
 			app.logger().information(it->first + ": " + it->second);
 		}
-		
-		if(request.find("Upgrade") != request.end() && Poco::icompare(request["Upgrade"], "websocket") == 0)
+
+		if (request.find("Upgrade") != request.end() && Poco::icompare(request["Upgrade"], "websocket") == 0)
 			return new WebSocketRequestHandler;
 		else
 			return new PageRequestHandler;
@@ -138,7 +152,7 @@ public:
 };
 
 
-class WebSocketServer: public Poco::Util::ServerApplication
+class WebSocketServer : public Poco::Util::ServerApplication
 	/// The main application class.
 	///
 	/// This class handles command-line arguments and
@@ -158,10 +172,10 @@ class WebSocketServer: public Poco::Util::ServerApplication
 	/// To test the WebSocketServer you can use any web browser (http://localhost:9980/).
 {
 public:
-	WebSocketServer(): _helpRequested(false)
+	WebSocketServer() : _helpRequested(false)
 	{
 	}
-	
+
 	~WebSocketServer()
 	{
 	}
@@ -172,7 +186,7 @@ protected:
 		loadConfiguration(); // load default configuration files, if present
 		ServerApplication::initialize(self);
 	}
-		
+
 	void uninitialize()
 	{
 		ServerApplication::uninitialize();
@@ -181,11 +195,11 @@ protected:
 	void defineOptions(OptionSet& options)
 	{
 		ServerApplication::defineOptions(options);
-		
+
 		options.addOption(
 			Option("help", "h", "display help information on command line arguments")
-				.required(false)
-				.repeatable(false));
+			.required(false)
+			.repeatable(false));
 	}
 
 	void handleOption(const std::string& name, const std::string& value)
@@ -214,8 +228,8 @@ protected:
 		else
 		{
 			// get parameters from configuration file
-			unsigned short port = (unsigned short) config().getInt("WebSocketServer.port", 9980);
-			
+			unsigned short port = (unsigned short)config().getInt("WebSocketServer.port", 9980);
+
 			// set-up a server socket
 			ServerSocket svs(port);
 			// set-up a HTTPServer instance
@@ -229,7 +243,7 @@ protected:
 		}
 		return Application::EXIT_OK;
 	}
-	
+
 private:
 	bool _helpRequested;
 };
